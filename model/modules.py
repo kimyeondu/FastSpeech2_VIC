@@ -35,7 +35,7 @@ class VarianceAdaptor(nn.Module):
 
         pitch_quantization = model_config["variance_embedding"]["pitch_quantization"]
         energy_quantization = model_config["variance_embedding"]["energy_quantization"]
-        n_bins = model_config["variance_embedding"]["n_bins"]
+        n_bins = model_config["variance_embedding"]["n_bins"] # 256
         assert pitch_quantization in ["linear", "log"]
         assert energy_quantization in ["linear", "log"]
         with open(
