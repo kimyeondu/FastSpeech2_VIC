@@ -78,6 +78,8 @@ class FastSpeech2(nn.Module):
             d_rounded,
             mel_lens,
             mel_masks,
+            pitch_embedding,
+            energy_embedding,
         ) = self.variance_adaptor(
             output,
             src_masks,
@@ -107,4 +109,6 @@ class FastSpeech2(nn.Module):
             mel_masks,
             src_lens,
             mel_lens,
+            pitch_embedding,
+            energy_embedding,
         )
