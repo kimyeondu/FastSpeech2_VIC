@@ -1,10 +1,10 @@
 dataset: "LJSpeech"
 
 path:
-  corpus_path: "/home/kyeonj/Desktop/data/LJSpeech-1.1"
+  corpus_path: "/home/work/data/LJSpeech-1.1"
   lexicon_path: "lexicon/librispeech-lexicon.txt"
   raw_path: "./raw_data/LJSpeech"
-  preprocessed_path: "/home/kyeonj/Desktop/data/LJSpeech-1.1"
+  preprocessed_path: "/home/work/data/LJSpeech-1.1"
 
 preprocessing:
   val_size: 512

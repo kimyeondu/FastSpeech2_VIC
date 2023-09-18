@@ -1,11 +1,28 @@
 import torch
 import torch.nn as nn
 
+class FullGatherLayer(torch.autograd.Function):
+    """
+    Gather tensors from all process and support backward propagation
+    for the gradients across processes.
+    """
+
+    @staticmethod
+    def forward(ctx, x):
+        output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
+        dist.all_gather(output, x)
+        return tuple(output)
+
+    @staticmethod
+    def backward(ctx, *grads):
+        all_gradients = torch.stack(grads)
+        dist.all_reduce(all_gradients)
+        return all_gradients[dist.get_rank()]
 
 class FastSpeech2Loss(nn.Module):
     """ FastSpeech2 Loss """
 
-    def __init__(self, preprocess_config, model_config):
+    def __init__(self, preprocess_config, model_config, train_config):
         super(FastSpeech2Loss, self).__init__()
         self.pitch_feature_level = preprocess_config["preprocessing"]["pitch"][
             "feature"
@@ -13,6 +30,10 @@ class FastSpeech2Loss(nn.Module):
         self.energy_feature_level = preprocess_config["preprocessing"]["energy"][
             "feature"
         ]
+        self.batch_size = train_config["optimizer"]["batch_size"]
+        self.coeff_std = train_config["coefficient"]["std"]
+        self.coeff_cov = train_config["coefficient"]["cov"]
+
         self.mse_loss = nn.MSELoss()
         self.mae_loss = nn.L1Loss()
 
@@ -36,8 +57,8 @@ class FastSpeech2Loss(nn.Module):
             mel_masks,
             _,
             _,
-            pitch_embedding,
-            energy_embedding,
+            pitch_emb,
+            energy_emb,
         ) = predictions
         src_masks = ~src_masks
         mel_masks = ~mel_masks
@@ -80,8 +101,25 @@ class FastSpeech2Loss(nn.Module):
         energy_loss = self.mse_loss(energy_predictions, energy_targets)
         duration_loss = self.mse_loss(log_duration_predictions, log_duration_targets)
 
+        # vic
+        pitch_emb = torch.cat(FullGatherLayer.apply(pitch_emb), dim=0)
+        energy_emb = torch.cat(FullGatherLayer.apply(energy_emb), dim=0)
+        pitch_emb = pitch_emb - pitch_emb.mean(dim=0)
+        energy_emb = energy_emb - energy_emb.mean(dim=0)
+
+        # std loss
+        std_pitch = torch.sqrt(pitch_emb.var(dim=0) + 0.0001) # sqrt(var+eps)
+        std_energy = torch.sqrt(std_energy.var(dim=0) + 0.0001)
+        std_loss = torch.mean(F.relu(1 - std_pitch)) / 2 + torch.mean(F.relu(1 - std_energy)) / 2 # hinge
+        # cov loss
+        cov_pitch = (pitch_emb.T @ pitch_emb) / (self.batch_size - 1) # cov
+        cov_energy = (energy_emb.T @ energy_emb) / (self.batch_size - 1)
+        cov_loss = off_diagonal(cov_pitch).pow_(2).sum().div(self.num_features) 
+                + off_diagonal(cov_energy).pow_(2).sum().div(self.num_features)        
+
         total_loss = (
-            mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss
+            mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss \
+            + self.coeff_std*std_loss + self.coeff_cov*cov_loss
         )
 
         return (
@@ -91,4 +129,6 @@ class FastSpeech2Loss(nn.Module):
             pitch_loss,
             energy_loss,
             duration_loss,
+            std_loss,
+            cov_loss,
         )
