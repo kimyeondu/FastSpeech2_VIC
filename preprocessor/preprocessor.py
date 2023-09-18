@@ -81,7 +81,6 @@ class Preprocessor:
                     else:
                         info, pitch, energy, n = ret
                     out.append(info)
-
                 if len(pitch) > 0:
                     pitch_scaler.partial_fit(pitch.reshape((-1, 1)))
                 if len(energy) > 0:

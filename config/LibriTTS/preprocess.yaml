@@ -1,10 +1,10 @@
 dataset: "LibriTTS"
 
 path:
-  corpus_path: "/home/ming/Data/LibriTTS/train-clean-360"
+  corpus_path: "/home/kyeonj/Desktop/data/libri/LibriTTS/train-clean-100"
   lexicon_path: "lexicon/librispeech-lexicon.txt"
   raw_path: "./raw_data/LibriTTS"
-  preprocessed_path: "./preprocessed_data/LibriTTS"
+  preprocessed_path: "/home/kyeonj/Desktop/data/libri/LibriTTS"
 
 preprocessing:
   val_size: 512

@@ -15,6 +15,7 @@ def prepare_align(config):
     max_wav_value = config["preprocessing"]["audio"]["max_wav_value"]
     cleaners = config["preprocessing"]["text"]["text_cleaners"]
     for speaker in tqdm(os.listdir(in_dir)):
+        if 'script' in speaker: continue
         for chapter in os.listdir(os.path.join(in_dir, speaker)):
             for file_name in os.listdir(os.path.join(in_dir, speaker, chapter)):
                 if file_name[-4:] != ".wav":
