@@ -1,23 +1,40 @@
 import torch
 import torch.nn as nn
+from torch.nn import functional as F
+import numpy as np
 
-class FullGatherLayer(torch.autograd.Function):
-    """
-    Gather tensors from all process and support backward propagation
-    for the gradients across processes.
-    """
+# class FullGatherLayer(torch.autograd.Function):
+#     """
+#     Gather tensors from all process and support backward propagation
+#     for the gradients across processes.
+#     """
 
-    @staticmethod
-    def forward(ctx, x):
-        output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
-        dist.all_gather(output, x)
-        return tuple(output)
+#     @staticmethod
+#     def forward(ctx, x):
+#         output = [torch.zeros_like(x) for _ in range(dist.get_world_size())]
+#         dist.all_gather(output, x)
+#         return tuple(output)
 
-    @staticmethod
-    def backward(ctx, *grads):
-        all_gradients = torch.stack(grads)
-        dist.all_reduce(all_gradients)
-        return all_gradients[dist.get_rank()]
+#     @staticmethod
+#     def backward(ctx, *grads):
+#         all_gradients = torch.stack(grads)
+#         dist.all_reduce(all_gradients)
+#         return all_gradients[dist.get_rank()]
+
+
+# def off_diagonal(x):
+#     b, n, m = x.shape
+#     print(x.shape)
+#     assert n == m
+#     return x.flatten()[:-1].view(b, n - 1, n + 1)[:, 1:].flatten()
+
+# 대각선 항목을 제거하는 함수 정의
+def off_diagonal(x):
+    b, n, m = x.shape
+    assert n == m
+    diagonal_removed = x * (1 - torch.eye(n).cuda())
+    # diagonal_sum = diagonal_removed.sum(dim=(1, 2))
+    return diagonal_removed.flatten()
 
 class FastSpeech2Loss(nn.Module):
     """ FastSpeech2 Loss """
@@ -102,20 +119,26 @@ class FastSpeech2Loss(nn.Module):
         duration_loss = self.mse_loss(log_duration_predictions, log_duration_targets)
 
         # vic
-        pitch_emb = torch.cat(FullGatherLayer.apply(pitch_emb), dim=0)
-        energy_emb = torch.cat(FullGatherLayer.apply(energy_emb), dim=0)
+        # pitch_emb = torch.cat(FullGatherLayer.apply(pitch_emb), dim=0)
+        # energy_emb = torch.cat(FullGatherLayer.apply(energy_emb), dim=0)
+      
         pitch_emb = pitch_emb - pitch_emb.mean(dim=0)
         energy_emb = energy_emb - energy_emb.mean(dim=0)
 
         # std loss
         std_pitch = torch.sqrt(pitch_emb.var(dim=0) + 0.0001) # sqrt(var+eps)
-        std_energy = torch.sqrt(std_energy.var(dim=0) + 0.0001)
+        std_energy = torch.sqrt(energy_emb.var(dim=0) + 0.0001)
         std_loss = torch.mean(F.relu(1 - std_pitch)) / 2 + torch.mean(F.relu(1 - std_energy)) / 2 # hinge
+
         # cov loss
-        cov_pitch = (pitch_emb.T @ pitch_emb) / (self.batch_size - 1) # cov
-        cov_energy = (energy_emb.T @ energy_emb) / (self.batch_size - 1)
-        cov_loss = off_diagonal(cov_pitch).pow_(2).sum().div(self.num_features) 
-                + off_diagonal(cov_energy).pow_(2).sum().div(self.num_features)        
+        pitch_emb_T = pitch_emb.transpose(2, 1)
+        energy_emb_T = energy_emb.transpose(2, 1)
+
+        cov_pitch = (pitch_emb_T  @ pitch_emb) / (self.batch_size - 1) # cov
+        cov_energy = (energy_emb_T @ energy_emb) / (self.batch_size - 1)
+        
+        cov_loss = off_diagonal(cov_pitch).pow_(2).sum().div(cov_pitch.shape[-1]) \
+                + off_diagonal(cov_energy).pow_(2).sum().div(cov_energy.shape[-1])        
 
         total_loss = (
             mel_loss + postnet_mel_loss + duration_loss + pitch_loss + energy_loss \
